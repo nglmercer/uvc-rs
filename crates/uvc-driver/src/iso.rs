@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     mem,
     ptr::{self, NonNull},
     sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
@@ -6,13 +7,9 @@ use std::{
 };
 
 use libusb1_sys::{
-    constants::{
-        LIBUSB_TRANSFER_CANCELLED, LIBUSB_TRANSFER_COMPLETED, LIBUSB_TRANSFER_ERROR,
-        LIBUSB_TRANSFER_TIMED_OUT,
-    },
-    libusb_alloc_transfer, libusb_cancel_transfer, libusb_fill_iso_transfer, libusb_free_transfer,
-    libusb_handle_events_timeout_completed, libusb_set_iso_packet_lengths, libusb_submit_transfer,
-    libusb_transfer,
+    constants::LIBUSB_TRANSFER_ERROR, libusb_alloc_transfer, libusb_cancel_transfer,
+    libusb_fill_iso_transfer, libusb_free_transfer, libusb_handle_events_timeout_completed,
+    libusb_set_iso_packet_lengths, libusb_submit_transfer, libusb_transfer,
 };
 use uvc_core::{EngineError, EngineResult};
 
@@ -97,7 +94,8 @@ pub struct LibusbIsochronousLoop {
     endpoint: UsbEndpoint,
     layout: IsoPacketLayout,
     timeout: Duration,
-    in_flight: Option<LibusbIsoTransfer>,
+    ring_size: usize,
+    in_flight: VecDeque<LibusbIsoTransfer>,
     last_packets: Vec<Vec<u8>>,
     last_total_len: usize,
 }
@@ -107,6 +105,16 @@ impl LibusbIsochronousLoop {
         session: &RusbUsbDeviceSession,
         endpoint: UsbEndpoint,
         packet_count: usize,
+        timeout: Duration,
+    ) -> EngineResult<Self> {
+        Self::new_with_ring(session, endpoint, packet_count, 1, timeout)
+    }
+
+    pub fn new_with_ring(
+        session: &RusbUsbDeviceSession,
+        endpoint: UsbEndpoint,
+        packet_count: usize,
+        ring_size: usize,
         timeout: Duration,
     ) -> EngineResult<Self> {
         if endpoint.transfer_type() != UsbTransferType::Isochronous {
@@ -123,6 +131,12 @@ impl LibusbIsochronousLoop {
             )));
         }
 
+        if ring_size == 0 {
+            return Err(EngineError::InvalidArgument(
+                "ISO transfer ring size must be greater than zero".to_owned(),
+            ));
+        }
+
         let layout = IsoPacketLayout::new(endpoint.packet_payload_size().into(), packet_count)?;
 
         Ok(Self {
@@ -131,7 +145,8 @@ impl LibusbIsochronousLoop {
             endpoint,
             layout,
             timeout,
-            in_flight: None,
+            ring_size,
+            in_flight: VecDeque::with_capacity(ring_size),
             last_packets: Vec::new(),
             last_total_len: 0,
         })
@@ -154,24 +169,34 @@ impl LibusbIsochronousLoop {
     }
 
     pub fn poll_iso(&mut self) -> EngineResult<Option<CompletedIsoTransfer>> {
-        if self.in_flight.is_none() {
-            self.submit()?;
+        while self.in_flight.len() < self.ring_size {
+            self.submit_one()?;
         }
 
-        let transfer = self
-            .in_flight
-            .as_mut()
-            .ok_or_else(|| EngineError::Backend("ISO transfer is not in flight".to_owned()))?;
+        let completed_index = self.wait_any(self.context, self.timeout)?;
+        let completed = {
+            let transfer = self
+                .in_flight
+                .get_mut(completed_index)
+                .ok_or_else(|| EngineError::Backend("completed ISO transfer missing".to_owned()))?;
 
-        transfer.wait(self.context, self.timeout)?;
-        let completed = transfer.to_completed_iso_transfer(self.endpoint.address())?;
+            transfer.to_completed_iso_transfer(self.endpoint.address())?
+        };
         let total_len = completed.total_len();
         let packets = completed.into_packets();
 
+        let replacement = LibusbIsoTransfer::submit(
+            self.context,
+            self.handle,
+            self.endpoint.address(),
+            self.layout.packet_len(),
+            self.layout.packet_count(),
+            self.timeout,
+        )?;
+        self.in_flight[completed_index] = replacement;
+
         self.last_packets = packets;
         self.last_total_len = total_len;
-        self.in_flight = None;
-        self.submit()?;
 
         Ok(Some(CompletedIsoTransfer {
             endpoint_address: self.endpoint.address(),
@@ -180,11 +205,7 @@ impl LibusbIsochronousLoop {
         }))
     }
 
-    fn submit(&mut self) -> EngineResult<()> {
-        if self.in_flight.is_some() {
-            return Ok(());
-        }
-
+    fn submit_one(&mut self) -> EngineResult<()> {
         let transfer = LibusbIsoTransfer::submit(
             self.context,
             self.handle,
@@ -194,8 +215,41 @@ impl LibusbIsochronousLoop {
             self.timeout,
         )?;
 
-        self.in_flight = Some(transfer);
+        self.in_flight.push_back(transfer);
         Ok(())
+    }
+
+    fn wait_any(
+        &mut self,
+        context: *mut libusb1_sys::libusb_context,
+        timeout: Duration,
+    ) -> EngineResult<usize> {
+        let deadline = Instant::now() + timeout;
+
+        loop {
+            if let Some(index) = self.completed_index() {
+                return Ok(index);
+            }
+
+            let remaining = deadline.saturating_duration_since(Instant::now());
+
+            if remaining.is_zero() {
+                return Err(EngineError::Timeout);
+            }
+
+            let mut tv = duration_to_timeval(remaining.min(Duration::from_millis(1)));
+            let result = unsafe {
+                libusb_handle_events_timeout_completed(context, &mut tv, ptr::null_mut())
+            };
+
+            if result != 0 {
+                return Err(libusb_error(result));
+            }
+        }
+    }
+
+    fn completed_index(&self) -> Option<usize> {
+        self.in_flight.iter().position(LibusbIsoTransfer::completed)
     }
 }
 
@@ -269,37 +323,6 @@ impl LibusbIsoTransfer {
         })
     }
 
-    fn wait(
-        &mut self,
-        context: *mut libusb1_sys::libusb_context,
-        timeout: Duration,
-    ) -> EngineResult<()> {
-        let deadline = Instant::now() + timeout;
-
-        loop {
-            if self.completed() {
-                break;
-            }
-
-            let remaining = deadline.saturating_duration_since(Instant::now());
-
-            if remaining.is_zero() {
-                return Err(EngineError::Timeout);
-            }
-
-            let mut tv = duration_to_timeval(remaining.min(Duration::from_millis(100)));
-            let result = unsafe {
-                libusb_handle_events_timeout_completed(context, &mut tv, ptr::null_mut())
-            };
-
-            if result != 0 {
-                return Err(libusb_error(result));
-            }
-        }
-
-        self.status_result()
-    }
-
     fn to_completed_iso_transfer(
         &mut self,
         endpoint_address: u8,
@@ -331,22 +354,6 @@ impl LibusbIsoTransfer {
 
     fn completed(&self) -> bool {
         unsafe { (&*self.state).completed.load(Ordering::Acquire) }
-    }
-
-    fn status_result(&self) -> EngineResult<()> {
-        match unsafe { (&*self.state).status.load(Ordering::Acquire) } {
-            LIBUSB_TRANSFER_COMPLETED => Ok(()),
-            LIBUSB_TRANSFER_TIMED_OUT => Err(EngineError::Timeout),
-            LIBUSB_TRANSFER_CANCELLED => Err(EngineError::Backend(
-                "ISO transfer was cancelled".to_owned(),
-            )),
-            LIBUSB_TRANSFER_ERROR => Err(EngineError::Backend(
-                "ISO transfer completed with libusb error".to_owned(),
-            )),
-            status => Err(EngineError::Backend(format!(
-                "ISO transfer completed with unexpected status {status}"
-            ))),
-        }
     }
 }
 

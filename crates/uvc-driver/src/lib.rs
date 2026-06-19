@@ -7,6 +7,7 @@ pub mod backend;
 pub mod descriptor;
 pub mod device;
 pub mod fake;
+pub mod packet;
 pub mod transfer;
 
 #[cfg(feature = "rusb")]
@@ -25,6 +26,7 @@ pub use device::{
 pub use fake::{FakeCameraPipeline, FakeFrameGenerator, FakeMultiCameraEngine};
 #[cfg(feature = "rusb")]
 pub use iso::{CompletedIsoTransfer, IsoPacketLayout, LibusbIsochronousLoop};
+pub use packet::{MjpegFrameAssembler, UvcPacketAssembler, UvcPayloadHeader, is_mjpeg_frame};
 #[cfg(feature = "rusb")]
 pub use session::{RusbTransferReader, RusbUsbDeviceSession};
 pub use transfer::{

@@ -4,6 +4,7 @@ pub mod iso;
 pub mod session;
 
 pub mod backend;
+pub mod decode;
 pub mod descriptor;
 pub mod device;
 pub mod fake;
@@ -13,6 +14,7 @@ pub mod transfer;
 #[cfg(feature = "rusb")]
 pub use backend::RusbUsbBackend;
 pub use backend::{NoopUsbBackend, UsbBackend};
+pub use decode::{DecodedFrameSinkAdapter, FrameDecoder, Nv12ToRgbaDecoder, YuyvToRgbaDecoder};
 pub use descriptor::{
     DescriptorHeader, EndpointDescriptor, StreamingDescriptor, StreamingDescriptorKind, UvcFormat,
     UvcFormatType, UvcFrame, UvcStreamCollection, UvcStreamInterface,

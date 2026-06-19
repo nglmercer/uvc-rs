@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/uvc-core",
+    "crates/uvc-driver",
+    "crates/uvc-jni",
+    "crates/uvc-cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uvc-core = { path = "crates/uvc-core" }
+uvc-driver = { path = "crates/uvc-driver" }

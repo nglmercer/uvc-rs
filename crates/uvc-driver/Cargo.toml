@@ -1,0 +1,9 @@
+[package]
+name = "uvc-driver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tracing.workspace = true
+uvc-core.workspace = true

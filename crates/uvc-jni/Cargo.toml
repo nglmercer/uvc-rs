@@ -4,7 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+android = ["dep:libusb1-sys", "dep:rusb", "uvc-driver/rusb"]
+
 [dependencies]
 jni = "0.21"
+libusb1-sys = { version = "0.7", optional = true }
+rusb = { version = "0.9", optional = true, features = ["vendored"] }
 uvc-core.workspace = true
 uvc-driver.workspace = true

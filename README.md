@@ -13,14 +13,13 @@ Completed against `plan.md` and `.kilo/plans/rust-uvc-engine.md`:
 - UVC descriptor parsing models with synthetic descriptor tests.
 - Optional `rusb` feature plus backend, device, endpoint, interface, transfer, and device-profile abstractions.
 - rusb-backed device discovery, active-config UVC interface parsing, device open, claim, alternate-setting activation, libusb async ISO multi-transfer ring, UVC packet assembly, MJPEG boundary detection, and assembled-frame sink integration.
-- Android file-descriptor identity wrapper and Kotlin-facing JNI exports in `uvc-jni`.
+- Android file-descriptor identity wrapper, Kotlin-facing JNI exports, and compile-safe `libusb_wrap_sys_device` boundary behind the `android` feature in `uvc-jni`.
 - Workspace formatting, checks, and tests are passing.
 
 Not complete yet:
 
 - No hardware-validated UVC stream, decoded-frame pipeline, or Android rendering path.
-- No Android NDK integration or Android file-descriptor-to-libusb path.
-- No Kotlin companion classes or Android surface, `ANativeWindow`, or `HardwareBuffer` path.
+- No Android target check, Kotlin companion classes, or `ANativeWindow`/`HardwareBuffer` path.
 - No performance benchmark suite.
 - No `LICENSE` file yet, despite the workspace package license metadata.
 
@@ -33,7 +32,7 @@ crates/
   uvc-driver/
     UVC descriptor parser, backend traits, rusb-backed device discovery/session management, libusb async ISO multi-transfer ring, UVC packet/MJPEG assembly, MJPEG frame sink adapter, fake deterministic camera backend, performance validation example, and concurrency validation harness.
   uvc-jni/
-    Android USB file-descriptor identity wrapper, opaque native engine handle, and JNI exports for initialize/start/stop/control/poll/release.
+    Android USB file-descriptor identity wrapper, libusb fd wrapping boundary, opaque native engine handle, and JNI exports for initialize/start/stop/control/poll/release.
   uvc-cli/
     Local CLI tool for fake multi-camera validation.
 ```
@@ -55,8 +54,7 @@ Recommended order:
 1. Validate the libusb async ISO multi-transfer ring on desktop Linux with UVC hardware and measure packet loss/recovery.
 2. Add decoded MJPEG-to-RGBA/YUV sink integration for assembled frames.
 3. Add Android target checks once the NDK and libusb build environment are configured.
-4. Move Android file-descriptor handling from a placeholder into a real `libusb_wrap_sys_device` boundary behind an Android feature.
-5. Add Kotlin companion classes for the JNI exports.
+4. Add Kotlin companion classes for the JNI exports.
 6. Add benchmarks for frame buffer reuse, bounded-channel latency, and fake multi-camera throughput.
 
 ## Current milestone coverage
@@ -67,7 +65,7 @@ Recommended order:
 | Core types and error model | Complete |
 | Fake multi-camera pipeline | Complete |
 | UVC descriptor and format negotiation | Complete |
-| Android FD wrapper design | Placeholder only |
+| Android FD wrapper design | Identity wrapper and libusb fd wrapping boundary complete; Android target validation pending |
 | Real USB backend | Device discovery, session management, libusb async ISO ring, UVC/MJPEG assembly, and assembled-frame sink complete; hardware validation and decoded MJPEG sink pending |
 | JNI binding layer | JNI exports, opaque native engine handles, and fake-camera smoke path complete; Android NDK/libusb wrapping and Kotlin companion classes pending |
 | Performance validation | Fake multi-camera throughput, consumer buffer reuse, and bounded-channel latency example complete; criterion benchmarks pending |

@@ -412,6 +412,8 @@ name = "uvc-jni"
 version = "0.1.0"
 dependencies = [
  "jni",
+ "libusb1-sys",
+ "rusb",
  "uvc-core",
  "uvc-driver",
 ]

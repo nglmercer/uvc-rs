@@ -66,10 +66,10 @@ jobs:
           if [ -n "$ABI" ]; then
             mkdir -p "android-app/app/src/main/cpp/$ABI"
             cp "target/${{ matrix.target }}/release/libuvc_jni.so" "android-app/app/src/main/cpp/$ABI/libuvc_jni.so"
-          fi
 
-          cd android-app
-          gradle assembleDebug
+            cd android-app
+            gradle assembleDebug -Pandroid.injected.abi=$ABI
+          fi
 
   emulator_test:
     runs-on: ubuntu-latest

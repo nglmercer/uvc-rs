@@ -7,7 +7,6 @@ android {
         applicationId 'com.test.uvc'
         minSdk 26
         targetSdk 35
-        ndk { abiFilters 'arm64-v8a' }
         externalNativeBuild { cmake { cppFlags '' } }
     }
     buildTypes { release { minifyEnabled false } }

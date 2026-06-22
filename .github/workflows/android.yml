@@ -89,9 +89,7 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 11076708
-          build-tools-version: 35.0.0
-          platforms: android-35
-          system-image: system-images;android-35;google_apis;x86_64
+          packages: 'build-tools;35.0.0 platforms;android-35 system-images;android-35;google_apis;x86_64'
 
       - name: Start Emulator and Smoke Test
         uses: reactivecircus/android-emulator-runner@v2
@@ -102,4 +100,4 @@ jobs:
           profile: medium_phone
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -netfast
           disable-animations: true
-          scripts: adb shell getprop ro.product.cpu.abi
+          script: adb shell getprop ro.product.cpu.abi
